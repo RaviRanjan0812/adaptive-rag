@@ -1,0 +1,58 @@
+name: eval
+
+on:
+  push:
+  pull_request:
+
+env:
+  FAITH_GATE: "0.60"         # override to tighten as the corpus improves
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Fetch corpus (cached)
+        # Skip real EDGAR fetch in CI; use fixtures if they exist, else skip-tiers
+        run: |
+          if [ -f data/raw/manifest.jsonl ]; then
+            echo "Corpus cache found."
+          else
+            echo "No corpus cache — running in stub/skip-tiers mode."
+            echo "SKIP_TIERS=true" >> $GITHUB_ENV
+          fi
+
+      - name: Run benchmark + faithfulness regression gate
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          FAITH_GATE: ${{ env.FAITH_GATE }}
+        run: |
+          SKIP_FLAG=""
+          if [ "$SKIP_TIERS" = "true" ]; then SKIP_FLAG="--skip-tiers"; fi
+          python -m eval.benchmark \
+            --queries eval/queries.jsonl \
+            --save-results eval/results.json \
+            $SKIP_FLAG
+        # exit(1) from benchmark.py if faithfulness gate fails → job fails
+
+      - name: Crossover analysis
+        if: success()
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python -m eval.crossover --results eval/results.json
+
+      - name: Upload results artefact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-${{ github.sha }}
+          path: eval/results.json
+          if-no-files-found: ignore

@@ -1,0 +1,26 @@
+# --- core ---
+python-dotenv
+fastapi
+uvicorn[standard]
+pydantic>=2
+
+# --- LLM (Gemini) ---
+google-generativeai>=0.8.0
+
+# --- retrieval ---
+faiss-cpu
+rank-bm25
+sentence-transformers
+
+# --- agentic / graph tiers ---
+langchain
+langgraph
+langchain-community
+networkx
+
+# --- eval / observability ---
+ragas
+langfuse
+
+# --- ingest ---
+requests

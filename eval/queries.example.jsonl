@@ -1,0 +1,5 @@
+{"id": "q1", "question": "What was Apple's total net revenue in FY2024?", "hop_type": "single_hop", "gold_answer": "<fill from 10-K income statement>", "gold_doc_ids": ["AAPL-10K-2024#income-statement"]}
+{"id": "q2", "question": "List NVIDIA's main reportable business segments.", "hop_type": "single_hop", "gold_answer": "<fill>", "gold_doc_ids": ["NVDA-10K-2024#segments"]}
+{"id": "q3", "question": "Compare Apple's disclosed supply-chain risks with the revenue miss its CFO discussed on the Q3 call.", "hop_type": "relational", "gold_answer": "<fill>", "gold_doc_ids": ["AAPL-10K-2024#risk-factors", "AAPL-Q3-2024-call#transcript"]}
+{"id": "q4", "question": "How did JPM's stated rate-sensitivity assumptions relate to its net interest income guidance and the actual Q2 result?", "hop_type": "multi_hop", "gold_answer": "<fill>", "gold_doc_ids": ["JPM-10K-2023#assumptions", "JPM-Q2-2024-call#nii", "JPM-10Q-2024#rates"]}
+{"id": "q5", "question": "What does the lunar calendar have to do with JPMorgan's tier-1 capital ratio?", "hop_type": "unanswerable", "gold_answer": "Not answerable from the filings.", "gold_doc_ids": []}

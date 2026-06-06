@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.env
+.venv/
+.claude/
+
+# Index + corpus (large binary/text — upload to persistent disk separately)
+data/
+
+# Benchmark results are committed when regenerated locally or via CI artifact download
+# eval/results.json

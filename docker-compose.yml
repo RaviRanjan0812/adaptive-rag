@@ -1,0 +1,59 @@
+services:
+
+  router:
+    build: .
+    ports: ["8000:8000"]
+    env_file: .env
+    environment:
+      - DEMO_MODE=${DEMO_MODE:-false}
+      - RATE_LIMIT_RPM=${RATE_LIMIT_RPM:-30}
+    volumes:
+      # Mount pre-built indexes so rebuilding the image doesn't lose them
+      - ./data:/app/data:ro
+    depends_on:
+      langfuse-server:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ── Langfuse (self-hosted tracing) ─────────────────────────────────────
+  langfuse-server:
+    image: langfuse/langfuse:2
+    ports: ["3000:3000"]
+    environment:
+      DATABASE_URL: postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
+      NEXTAUTH_SECRET: changeme-in-prod
+      NEXTAUTH_URL: http://localhost:3000
+      SALT: changeme-in-prod
+    depends_on:
+      langfuse-db:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/public/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+
+  langfuse-db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: langfuse
+      POSTGRES_DB: langfuse
+    volumes:
+      - langfuse_db:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U langfuse"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  langfuse_db:

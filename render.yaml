@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: adaptive-rag-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter          # swap to standard for production
+    healthCheckPath: /healthz
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false        # set in Render dashboard → never in source
+      - key: SEC_USER_AGENT
+        sync: false
+      - key: LANGFUSE_PUBLIC_KEY
+        sync: false
+      - key: LANGFUSE_SECRET_KEY
+        sync: false
+      - key: LANGFUSE_HOST
+        sync: false
+      - key: DEMO_MODE
+        value: "true"
+      - key: RATE_LIMIT_RPM
+        value: "20"
+    disk:
+      name: index-data
+      mountPath: /app/data
+      sizeGB: 2
