@@ -2,6 +2,7 @@
 python-dotenv
 fastapi
 uvicorn[standard]
+python-multipart
 pydantic>=2
 
 # --- LLM (Gemini + Groq) ---
