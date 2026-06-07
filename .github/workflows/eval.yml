@@ -20,6 +20,17 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Verify GROQ_API_KEY secret
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          if [ -z "$GROQ_API_KEY" ]; then
+            echo "❌ GROQ_API_KEY is empty or not set in GitHub secrets"
+            exit 1
+          else
+            echo "✅ GROQ_API_KEY is set (length: ${#GROQ_API_KEY})"
+          fi
+
       - name: Fetch corpus (cached)
         # Skip real EDGAR fetch in CI; use fixtures if they exist, else skip-tiers
         run: |
