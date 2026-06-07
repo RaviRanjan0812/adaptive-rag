@@ -32,13 +32,14 @@ jobs:
 
       - name: Run benchmark + faithfulness regression gate
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          LLM_PROVIDER: groq
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           FAITH_GATE: ${{ env.FAITH_GATE }}
         run: |
           SKIP_FLAG=""
           if [ "$SKIP_TIERS" = "true" ]; then SKIP_FLAG="--skip-tiers"; fi
           python -m eval.benchmark \
-            --queries eval/queries.jsonl \
+            --queries eval/queries.ci.jsonl \
             --save-results eval/results.json \
             $SKIP_FLAG
         # exit(1) from benchmark.py if faithfulness gate fails → job fails
@@ -46,7 +47,8 @@ jobs:
       - name: Crossover analysis
         if: success()
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          LLM_PROVIDER: groq
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: python -m eval.crossover --results eval/results.json
 
       - name: Upload results artefact

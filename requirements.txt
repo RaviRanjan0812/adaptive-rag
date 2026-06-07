@@ -4,8 +4,9 @@ fastapi
 uvicorn[standard]
 pydantic>=2
 
-# --- LLM (Gemini) ---
+# --- LLM (Gemini + Groq) ---
 google-genai>=1.0.0
+groq>=0.9.0
 
 # --- retrieval ---
 faiss-cpu
