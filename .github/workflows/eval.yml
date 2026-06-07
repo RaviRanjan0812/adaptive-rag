@@ -31,32 +31,44 @@ jobs:
             echo "✅ GROQ_API_KEY is set (length: ${#GROQ_API_KEY})"
           fi
 
-      - name: Fetch corpus (cached)
-        # Skip real EDGAR fetch in CI; use fixtures if they exist, else skip-tiers
+      - name: Check corpus availability
         run: |
-          if [ -f data/raw/manifest.jsonl ]; then
-            echo "Corpus cache found."
+          if [ -f data/index/faiss.index ] && [ -f data/index/bm25.pkl ] && [ -f data/index/chunks.jsonl ]; then
+            echo "HAS_INDEX=true" >> $GITHUB_ENV
+            echo "✅ Index found — full benchmark will run."
           else
-            echo "No corpus cache — running in stub/skip-tiers mode."
-            echo "SKIP_TIERS=true" >> $GITHUB_ENV
+            echo "HAS_INDEX=false" >> $GITHUB_ENV
+            echo "⚠️  No index found — running smoke test only."
           fi
 
+      - name: Smoke test (no index)
+        if: env.HAS_INDEX == 'false'
+        run: |
+          echo "--- Verifying imports and query file ---"
+          python -c "
+          import app.main, app.router, app.router_v2
+          import app.tiers.hybrid, app.tiers.long_context, app.tiers.graph_rag, app.tiers.agentic
+          import eval.benchmark, eval.metrics, eval.crossover
+          import json, pathlib
+          queries = [json.loads(l) for l in pathlib.Path('eval/queries.ci.jsonl').read_text().splitlines() if l.strip()]
+          assert len(queries) == 10, f'Expected 10 CI queries, got {len(queries)}'
+          print(f'✅ All imports OK. {len(queries)} CI queries validated.')
+          "
+
       - name: Run benchmark + faithfulness regression gate
+        if: env.HAS_INDEX == 'true'
         env:
           LLM_PROVIDER: groq
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           FAITH_GATE: ${{ env.FAITH_GATE }}
         run: |
-          SKIP_FLAG=""
-          if [ "$SKIP_TIERS" = "true" ]; then SKIP_FLAG="--skip-tiers"; fi
           python -m eval.benchmark \
             --queries eval/queries.ci.jsonl \
-            --save-results eval/results.json \
-            $SKIP_FLAG
+            --save-results eval/results.json
         # exit(1) from benchmark.py if faithfulness gate fails → job fails
 
       - name: Crossover analysis
-        if: success()
+        if: env.HAS_INDEX == 'true' && success()
         env:
           LLM_PROVIDER: groq
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
