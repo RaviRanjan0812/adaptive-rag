@@ -44,8 +44,10 @@ class LongContextTier(RetrievalTier):
     def run(self, question: str, session: SessionIndex | None = None) -> TierResult:
         corpus = session.corpus if session is not None else _load_corpus()
 
-        # Gemini 2.0 Flash supports 1M token context; guard at ~180k words anyway
-        max_words = 180_000
+        # Gemini 2.0 Flash: 1M tokens (~180k words); Groq free tier: ~4k tokens (~3k words)
+        import os
+        provider = os.getenv("LLM_PROVIDER", "gemini").lower()
+        max_words = 3_000 if provider == "groq" else 180_000
         words = corpus.split()
         if len(words) > max_words:
             corpus = " ".join(words[:max_words]) + "\n\n[corpus truncated]"
