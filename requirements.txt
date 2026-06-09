@@ -26,3 +26,4 @@ langfuse
 
 # --- ingest ---
 requests
+huggingface_hub

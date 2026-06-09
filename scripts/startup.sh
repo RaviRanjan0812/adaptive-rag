@@ -1,5 +1,5 @@
 #!/bin/bash
-# startup.sh — Auto-build index on first boot if data/index is empty.
+# startup.sh — Download pre-built index from HF Hub on first boot if missing.
 # Runs before uvicorn starts. Safe to re-run (skips if index already exists).
 
 set -e
@@ -8,23 +8,41 @@ INDEX_DIR="data/index"
 FAISS_FILE="$INDEX_DIR/faiss.index"
 
 if [ -f "$FAISS_FILE" ]; then
-    echo "✅ Index already exists — skipping ingest."
+    echo "✅ Index already exists — skipping download."
 else
-    echo "⚙️  No index found. Building from scratch (~10-15 min)..."
+    echo "⚙️  No index found. Downloading from Hugging Face Hub..."
 
-    # Step 1 — Fetch filings from SEC EDGAR
-    echo "--- Step 1/3: Fetching SEC filings ---"
-    python -m ingest.fetch_filings
+    mkdir -p "$INDEX_DIR"
 
-    # Step 2 — Chunk + embed + build FAISS & BM25
-    echo "--- Step 2/3: Building FAISS + BM25 index ---"
-    python -m ingest.build_index
+    python - <<'PYEOF'
+import os
+from huggingface_hub import hf_hub_download
 
-    # Step 3 — Build knowledge graph
-    echo "--- Step 3/3: Building knowledge graph ---"
-    python -m ingest.build_graph
+repo_id = "raviranjan0812/adaptive-rag-index"
+files = [
+    "faiss.index",
+    "bm25.pkl",
+    "chunks.jsonl",
+    "corpus.txt",
+    "graph.pkl",
+    "graph_nodes.jsonl",
+]
 
-    echo "✅ Index build complete."
+for fname in files:
+    print(f"  Downloading {fname}...")
+    path = hf_hub_download(
+        repo_id=repo_id,
+        filename=fname,
+        repo_type="dataset",
+        token=os.environ.get("HF_TOKEN"),
+        local_dir="data/index",
+    )
+    print(f"  ✅ {fname} saved to {path}")
+
+print("All index files downloaded.")
+PYEOF
+
+    echo "✅ Index download complete."
 fi
 
 # Start the API
