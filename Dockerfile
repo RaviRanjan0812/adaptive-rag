@@ -22,11 +22,14 @@ EOF
 
 COPY . .
 
+# Make startup script executable
+RUN chmod +x scripts/startup.sh
+
 EXPOSE 8000
 
-# Healthcheck so compose / Render know when the app is ready
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+# Healthcheck — longer start period to allow for first-boot index build (~15 min)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=900s --retries=5 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:${PORT:-8000}/healthz')"
 
-# Shell form so $PORT is expanded by the shell (required for Render)
-CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1 --timeout-keep-alive 30
+# Run startup script which auto-builds index if missing, then starts uvicorn
+CMD ["scripts/startup.sh"]
