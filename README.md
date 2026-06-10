@@ -43,22 +43,24 @@ quality, cost, and latency dimensions.
 
 | Tier | Strategy | Best for |
 |---|---|---|
-| `long_context` | Full corpus in Gemini context window | Short, self-contained, single-entity questions |
+| `long_context` | Full corpus in the LLM context window | Short, self-contained, single-entity questions |
 | `hybrid` | FAISS dense + BM25 lexical, fused with RRF, cross-encoder reranked | Single-hop factual lookups |
 | `graph_rag` | Entity extraction → NetworkX graph → BFS multi-hop traversal | Relational questions across multiple entities |
 | `agentic` | LangGraph plan→retrieve→critique loop (max 3 iterations) | Open-ended multi-step synthesis |
 
 ## Quickstart
 
-**Prerequisites:** Python 3.10+, a [Google AI Studio](https://aistudio.google.com) API key,
-and an SEC EDGAR user-agent string (`"Name email"` per SEC policy).
+**Prerequisites:** Python 3.10+, an LLM API key (either [Google AI Studio](https://aistudio.google.com)
+for Gemini **or** [Groq](https://console.groq.com/keys) for free Llama 3.3), and an SEC EDGAR
+user-agent string (`"Name email"` per SEC policy).
 
 ```bash
 pip install -r requirements.txt
 
-# Environment
-export GEMINI_API_KEY=AIza...
-export SEC_USER_AGENT="Your Name your@email.com"
+# Environment — copy the template and fill in your keys
+cp .env.example .env
+#   Set LLM_PROVIDER=gemini (+ GEMINI_API_KEY)  or  LLM_PROVIDER=groq (+ GROQ_API_KEY)
+#   Set SEC_USER_AGENT="Your Name your@email.com"
 
 # 1. Fetch SEC filings — AAPL, JPM, NVDA (10-K + 10-Q each)
 python -m ingest.fetch_filings
@@ -66,7 +68,7 @@ python -m ingest.fetch_filings
 # 2. Build FAISS + BM25 indexes and concatenated corpus
 python -m ingest.build_index
 
-# 3. Build knowledge graph via Gemini Flash entity extraction
+# 3. Build knowledge graph via LLM entity extraction
 python -m ingest.build_graph
 
 # 4. Start the API
@@ -76,6 +78,21 @@ uvicorn app.main:app --reload
 # 5. Run the full benchmark across all tiers
 python -m eval.benchmark --queries eval/queries.example.jsonl
 ```
+
+### LLM providers
+
+The LLM backend is selected via the `LLM_PROVIDER` env var — no code changes needed:
+
+| `LLM_PROVIDER` | Model | Notes |
+|---|---|---|
+| `gemini` (default) | `gemini-2.0-flash` | 1M-token context; full `long_context` tier |
+| `groq` | `llama-3.3-70b-versatile` | Free tier; `long_context` corpus truncated to ~3k words to fit the context window |
+
+### Low-memory mode
+
+On memory-constrained hosts (free-tier PaaS with <512MB RAM), set `LOW_MEMORY=true` to skip
+loading `sentence-transformers` and the CrossEncoder (~300MB saved). Retrieval falls back to
+BM25-only — all four tiers still function, with slightly lower retrieval precision.
 
 ## Streamlit demo
 
@@ -93,18 +110,20 @@ app/
   main.py           FastAPI application — /query  /tiers  /healthz  /metrics
   schemas.py        Shared Pydantic contracts (QueryRequest, TierResult, RouteDecision)
   router.py         Router v1 — heuristic (query features → tier)
-  router_v2.py      Router v2 — Gemini LLM-judge with confidence score; falls back to v1
+  llm.py            Provider-agnostic LLM client (Gemini / Groq) + cost helper
+  router_v2.py      Router v2 — LLM-judge with confidence score; falls back to v1
   observability.py  Cost + latency tracking; Langfuse trace emission
   tiers/
-    long_context.py Full-corpus Gemini generation
-    hybrid.py       FAISS + BM25 + RRF + cross-encoder rerank + Gemini generation
-    graph_rag.py    Entity graph BFS + grounded Gemini generation
+    long_context.py Full-corpus generation
+    hybrid.py       FAISS + BM25 + RRF + cross-encoder rerank + generation
+    graph_rag.py    Entity graph BFS + grounded generation
     agentic.py      LangGraph self-reflective loop
 
 ingest/
   fetch_filings.py  EDGAR HTTPS download — 10-K and 10-Q for each ticker
   build_index.py    Chunking, sentence-transformer embeddings, FAISS + BM25 index build
-  build_graph.py    Gemini Flash entity/relation extraction → NetworkX graph
+  build_graph.py    LLM entity/relation extraction → NetworkX graph
+  ingest_upload.py  Build an in-memory index from a user-uploaded .txt/.pdf
 
 eval/
   benchmark.py      Runs every tier against every query; produces cost/quality/latency table
@@ -122,8 +141,9 @@ scripts/
 
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/query` | Route and answer a question. Body: `{"question": "...", "force_tier": null}` |
+| `POST` | `/query` | Route and answer a question. Body: `{"question": "...", "force_tier": null, "session_id": null}` |
 | `POST` | `/query?router=v2` | Use the LLM-judge router instead of the heuristic |
+| `POST` | `/upload` | Upload a `.txt`/`.md`/`.pdf`; builds an in-memory index and returns a `session_id` to query your own document |
 | `GET` | `/tiers` | List registered retrieval tiers |
 | `GET` | `/healthz` | Liveness probe |
 | `GET` | `/metrics` | Prometheus-style cost and latency counters |
@@ -139,6 +159,11 @@ spanning three difficulty levels (easy / medium / hard) and four hop types
 - Crossover analysis: which tier wins at each difficulty × hop-type combination
 - CI faithfulness gate (`FAITH_GATE=0.60`) — pipeline exits with code 1 on regression
 
+> **Cost reporting:** `cost_usd` is always computed at Gemini 2.0 Flash rates
+> ($0.10 / 1M input, $0.40 / 1M output) regardless of the active provider. This keeps
+> per-tier cost comparison meaningful even when running free on Groq — it reflects the
+> cost the workload *would* incur on a paid LLM.
+
 ## Deployment
 
 See [DEPLOY.md](DEPLOY.md) for full instructions covering Docker Compose (local),
@@ -153,6 +178,6 @@ Render, Railway, and Hugging Face Spaces.
 | 2 | Long-context and hybrid tiers — FAISS + BM25 + RRF + rerank + Gemini generation |
 | 3 | GraphRAG tier — Gemini Flash entity extraction, NetworkX BFS traversal |
 | 4 | Agentic tier — LangGraph plan→retrieve→critique loop with per-step provenance |
-| 5 | Router v2 — Gemini LLM-judge with confidence score; v1 vs v2 benchmark comparison |
+| 5 | Router v2 — LLM-judge with confidence score; v1 vs v2 benchmark comparison |
 | 6 | Benchmark — 50 gold-labeled queries, crossover analysis, CI faithfulness gate |
 | 7 | Deploy — production Dockerfile, Langfuse tracing, Streamlit demo, rate limiting |
