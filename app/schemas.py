@@ -1,4 +1,4 @@
-"""Typed contracts for the whole system (Pydantic — reuse your TradingAgents instinct)."""
+"""Typed contracts for the whole system (Pydantic)."""
 from __future__ import annotations
 from enum import Enum
 from typing import List, Optional, Dict, Any

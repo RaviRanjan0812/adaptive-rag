@@ -247,5 +247,5 @@ st.markdown("---")
 st.caption(
     "Research tool — not financial advice. "
     "Answers sourced exclusively from SEC EDGAR filings (AAPL, NVDA, JPM). "
-    "[Source code](https://github.com/your-org/adaptive-rag)"
+    "[Source code](https://github.com/RaviRanjan0812/adaptive-rag)"
 )
