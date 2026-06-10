@@ -156,5 +156,5 @@ class HybridTier(RetrievalTier):
             cost_usd=cost(in_tok, out_tok),
             latency_ms=round(latency_ms, 1),
             num_llm_calls=1,
-            notes=f"dense={len(dense_hits)} bm25={len(bm25_hits)} rerank_k={TOP_RERANK} model={MODEL}",
+            notes=f"low_memory={LOW_MEMORY} bm25={len(bm25_hits)} rerank_k={TOP_RERANK} model={MODEL}",
         )
