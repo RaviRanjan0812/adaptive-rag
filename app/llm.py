@@ -28,8 +28,11 @@ _GROQ_MODEL   = os.getenv("GROQ_MODEL",   "llama-3.3-70b-versatile")
 MODEL = _GROQ_MODEL if PROVIDER == "groq" else _GEMINI_MODEL
 
 # ── Pricing ───────────────────────────────────────────────────────────────────
-_IN_PER_M  = 0.0 if PROVIDER == "groq" else 0.10
-_OUT_PER_M = 0.0 if PROVIDER == "groq" else 0.40
+# Cost is always reported at Gemini 2.0 Flash rates ($0.10 in / $0.40 out per 1M
+# tokens) so per-tier cost comparison stays meaningful even when running on Groq's
+# free tier. This is the cost the workload WOULD incur on a paid LLM.
+_IN_PER_M  = 0.10
+_OUT_PER_M = 0.40
 
 # ── Lazy clients ─────────────────────────────────────────────────────────────
 _gemini_client = None
