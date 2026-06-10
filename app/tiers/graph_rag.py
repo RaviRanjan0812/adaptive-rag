@@ -124,14 +124,18 @@ class GraphRagTier(RetrievalTier):
         # No graph exists for uploaded docs — fall back to hybrid retrieval
         if session is not None:
             import time as _time
-            from app.tiers.hybrid import _load_indexes, _dense_retrieve, _bm25_retrieve, _rrf, _rerank
+            from app.tiers.hybrid import _load_indexes, _dense_retrieve, _bm25_retrieve, _rrf, _rerank, LOW_MEMORY
             _, _, _, embed_model, rerank_model = _load_indexes()
             t0 = _time.perf_counter()
-            dense_hits = _dense_retrieve(question, session.faiss_index, embed_model, session.chunks, 20)
-            bm25_hits  = _bm25_retrieve(question, session.bm25, 20)
-            merged     = _rrf(dense_hits, bm25_hits)
-            candidates = [session.chunks[i] for i in merged[:40] if i < len(session.chunks)]
-            evidence_chunks = _rerank(question, candidates, rerank_model, 8)
+            if LOW_MEMORY or embed_model is None:
+                bm25_hits = _bm25_retrieve(question, session.bm25, 8)
+                evidence_chunks = [session.chunks[i] for i, _ in bm25_hits if i < len(session.chunks)]
+            else:
+                dense_hits = _dense_retrieve(question, session.faiss_index, embed_model, session.chunks, 20)
+                bm25_hits  = _bm25_retrieve(question, session.bm25, 20)
+                merged     = _rrf(dense_hits, bm25_hits)
+                candidates = [session.chunks[i] for i in merged[:40] if i < len(session.chunks)]
+                evidence_chunks = _rerank(question, candidates, rerank_model, 8)
             context, _ = _build_evidence([c["chunk_id"] for c in evidence_chunks], session.chunk_index)
             prompt = f"<graph_evidence>\n{context}\n</graph_evidence>\n\nQuestion: {question}"
             answer, in_tok, out_tok = llm(GEN_SYSTEM, prompt, max_tokens=1024)

@@ -15,6 +15,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+import os
+
 import faiss
 import numpy as np
 from sentence_transformers import SentenceTransformer, CrossEncoder
@@ -34,6 +36,10 @@ TOP_BM25   = 20
 TOP_RERANK = 5
 RRF_K      = 60
 
+# LOW_MEMORY=true → skip sentence-transformers & CrossEncoder (saves ~300MB RAM)
+# Use BM25-only retrieval — no dense embeddings, no reranking
+LOW_MEMORY = os.getenv("LOW_MEMORY", "false").lower() == "true"
+
 SYSTEM = (
     "You are a financial analyst assistant. "
     "Answer the question using ONLY the retrieved filing excerpts below. "
@@ -47,7 +53,7 @@ SYSTEM = (
 # --------------------------------------------------------------------------- #
 
 @lru_cache(maxsize=1)
-def _load_indexes() -> tuple[Any, Any, list[dict], SentenceTransformer, CrossEncoder]:
+def _load_indexes() -> tuple[Any, Any, list[dict], SentenceTransformer | None, CrossEncoder | None]:
     faiss_path  = INDEX_DIR / "faiss.index"
     bm25_path   = INDEX_DIR / "bm25.pkl"
     chunks_path = INDEX_DIR / "chunks.jsonl"
@@ -62,6 +68,11 @@ def _load_indexes() -> tuple[Any, Any, list[dict], SentenceTransformer, CrossEnc
     with bm25_path.open("rb") as f:
         bm25 = pickle.load(f)
     chunks = [json.loads(l) for l in chunks_path.read_text().splitlines() if l.strip()]
+
+    if LOW_MEMORY:
+        # Skip heavy ML models to stay within 512MB RAM (Railway free tier)
+        return fi, bm25, chunks, None, None
+
     embed_model  = SentenceTransformer(EMBED_MODEL)
     rerank_model = CrossEncoder(RERANK_MODEL)
     return fi, bm25, chunks, embed_model, rerank_model
@@ -115,12 +126,16 @@ class HybridTier(RetrievalTier):
         if session is not None:
             fi, bm25, chunks = session.faiss_index, session.bm25, session.chunks
 
-        dense_hits = _dense_retrieve(question, fi, embed_model, chunks, TOP_DENSE)
-        bm25_hits  = _bm25_retrieve(question, bm25, TOP_BM25)
-
-        merged_idx   = _rrf(dense_hits, bm25_hits)
-        candidates   = [chunks[i] for i in merged_idx[:TOP_DENSE + TOP_BM25] if i < len(chunks)]
-        final_chunks = _rerank(question, candidates, rerank_model, TOP_RERANK)
+        if LOW_MEMORY or embed_model is None:
+            # BM25-only path: no dense embeddings, no reranking
+            bm25_hits    = _bm25_retrieve(question, bm25, TOP_RERANK)
+            final_chunks = [chunks[i] for i, _ in bm25_hits if i < len(chunks)]
+        else:
+            dense_hits = _dense_retrieve(question, fi, embed_model, chunks, TOP_DENSE)
+            bm25_hits  = _bm25_retrieve(question, bm25, TOP_BM25)
+            merged_idx   = _rrf(dense_hits, bm25_hits)
+            candidates   = [chunks[i] for i in merged_idx[:TOP_DENSE + TOP_BM25] if i < len(chunks)]
+            final_chunks = _rerank(question, candidates, rerank_model, TOP_RERANK)
 
         context = "\n\n---\n\n".join(f"[{c['chunk_id']}]\n{c['text']}" for c in final_chunks)
         prompt  = f"<excerpts>\n{context}\n</excerpts>\n\nQuestion: {question}"

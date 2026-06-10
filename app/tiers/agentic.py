@@ -20,7 +20,7 @@ from app.llm import llm, cost, strip_fences, MODEL, _IN_PER_M, _OUT_PER_M
 from app.tiers.base import register, RetrievalTier
 from app.schemas import TierResult, TierName, Citation
 from app.session_store import SessionIndex
-from app.tiers.hybrid import _load_indexes, _dense_retrieve, _bm25_retrieve, _rrf, _rerank
+from app.tiers.hybrid import _load_indexes, _dense_retrieve, _bm25_retrieve, _rrf, _rerank, LOW_MEMORY
 
 MAX_LOOPS   = 3
 TOP_RETRIEVE = 6
@@ -120,11 +120,15 @@ def node_retrieve(state: AgentState) -> AgentState:
     loop         = state["loop_count"]
     query        = state["sub_queries"][loop % len(state["sub_queries"])]
 
-    dense_hits = _dense_retrieve(query, fi, embed_model, chunks, TOP_RETRIEVE)
-    bm25_hits  = _bm25_retrieve(query, bm25, TOP_RETRIEVE)
-    merged     = _rrf(dense_hits, bm25_hits)
-    candidates = [chunks[i] for i in merged[:TOP_RETRIEVE * 2] if i < len(chunks)]
-    top        = _rerank(query, candidates, rerank_model, RERANK_K)
+    if LOW_MEMORY or embed_model is None:
+        bm25_hits = _bm25_retrieve(query, bm25, RERANK_K)
+        top       = [chunks[i] for i, _ in bm25_hits if i < len(chunks)]
+    else:
+        dense_hits = _dense_retrieve(query, fi, embed_model, chunks, TOP_RETRIEVE)
+        bm25_hits  = _bm25_retrieve(query, bm25, TOP_RETRIEVE)
+        merged     = _rrf(dense_hits, bm25_hits)
+        candidates = [chunks[i] for i in merged[:TOP_RETRIEVE * 2] if i < len(chunks)]
+        top        = _rerank(query, candidates, rerank_model, RERANK_K)
 
     chunks_new = 0
     for c in top:
