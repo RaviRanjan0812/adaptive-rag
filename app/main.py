@@ -73,6 +73,20 @@ def _record(tier: str, cost: float, latency: float) -> None:
     _metrics[f"latency_ms_sum{{tier={tier!r}}}"] += latency
 
 
+def _raise_if_quota(e: Exception) -> None:
+    """Map LLM-provider quota/rate-limit errors to a clear 429 instead of a bare 500."""
+    name = type(e).__name__
+    msg = str(e)
+    if name == "RateLimitError" or "RESOURCE_EXHAUSTED" in msg or "rate_limit_exceeded" in msg:
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                "LLM provider quota exhausted (free-tier daily/minute limit). "
+                "Please try again later."
+            ),
+        ) from e
+
+
 # ── Routes ───────────────────────────────────────────────────────────────────
 
 @app.post("/upload")
@@ -149,7 +163,11 @@ def query(
             raise HTTPException(status_code=404, detail="session_id not found or expired (TTL 1 hour).")
 
     active_router = _v2 if router == "v2" else _v1
-    decision = active_router.route(req.question)
+    try:
+        decision = active_router.route(req.question)
+    except Exception as e:
+        _raise_if_quota(e)
+        raise
     chosen = req.force_tier or decision.tier
 
     # On Groq the long_context corpus is truncated to ~3k words to fit the
@@ -157,7 +175,11 @@ def query(
     if chosen == TierName.long_context and not req.force_tier and PROVIDER == "groq":
         decision.reasoning += " [rerouted long_context->hybrid: Groq context window too small for full corpus]"
         chosen = TierName.hybrid
-    result = get_tier(chosen).run(req.question, session=session)
+    try:
+        result = get_tier(chosen).run(req.question, session=session)
+    except Exception as e:
+        _raise_if_quota(e)
+        raise
 
     response = QueryResponse(question=req.question, route=decision, result=result)
 
