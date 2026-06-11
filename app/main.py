@@ -20,7 +20,8 @@ from fastapi.responses import PlainTextResponse
 from app.observability import trace_query
 from app.router import AdaptiveRouter
 from app.router_v2 import RouterV2
-from app.schemas import QueryRequest, QueryResponse
+from app.llm import PROVIDER
+from app.schemas import QueryRequest, QueryResponse, TierName
 from app.tiers.base import get_tier, all_tiers
 from app import session_store
 from ingest.ingest_upload import build_session_index
@@ -150,6 +151,12 @@ def query(
     active_router = _v2 if router == "v2" else _v1
     decision = active_router.route(req.question)
     chosen = req.force_tier or decision.tier
+
+    # On Groq the long_context corpus is truncated to ~3k words to fit the
+    # context window, which usually misses the answer — reroute to hybrid.
+    if chosen == TierName.long_context and not req.force_tier and PROVIDER == "groq":
+        decision.reasoning += " [rerouted long_context->hybrid: Groq context window too small for full corpus]"
+        chosen = TierName.hybrid
     result = get_tier(chosen).run(req.question, session=session)
 
     response = QueryResponse(question=req.question, route=decision, result=result)
