@@ -89,7 +89,9 @@ def _dense_retrieve(query: str, fi, embed_model, chunks, k: int) -> list[tuple[i
 
 
 def _bm25_retrieve(query: str, bm25, k: int) -> list[tuple[int, float]]:
-    tokens = query.lower().split()
+    # Strip punctuation so "NVIDIA's" matches corpus token "nvidia"
+    import re as _re
+    tokens = _re.findall(r"[a-z0-9]+", query.lower())
     scores = bm25.get_scores(tokens)
     top_idx = np.argsort(scores)[::-1][:k]
     return [(int(i), float(scores[i])) for i in top_idx]
